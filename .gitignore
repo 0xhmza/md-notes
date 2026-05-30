@@ -1,0 +1,106 @@
+# =====================================================================
+# publish/.gitignore  —  defense-in-depth for the public GitHub repo.
+# Only the encrypted bundle and the static viewer should ever ship.
+# =====================================================================
+
+# ---------- Secrets (never, ever) ----------
+.env
+.env.*
+*.env
+secrets/
+secret.*
+secrets.*
+credentials
+credentials.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_ed25519
+*.token
+.npmrc
+.netrc
+auth.json
+
+# ---------- The vault password file, in case anyone ever writes one ----------
+password
+password.*
+*.password
+vault-key
+vault.key
+.vaultkey
+
+# ---------- Plaintext vault leakage (paranoid catch-all) ----------
+# The only .json that belongs here is content.enc.json. Any other Obsidian
+# artefact that lands here is almost certainly a mistake.
+.obsidian/
+.trash/
+.stfolder/
+.stignore
+.stversions/
+*.md
+!README.md
+# Common Obsidian attachment extensions — if one appears here unencrypted, block it.
+*.canvas
+*.excalidraw
+
+# ---------- OS clutter ----------
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ---------- Editor / IDE ----------
+.vscode/
+.idea/
+.fleet/
+*.swp
+*.swo
+*.swn
+*~
+.*.kate-swp
+\#*\#
+.\#*
+
+# ---------- Logs / temp / backups ----------
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.old
+*.cache
+.cache/
+
+# ---------- Build / dependency junk (you shouldn't have any here) ----------
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+dist/
+build/
+out/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# ---------- Cloud sync markers ----------
+.dropbox
+.dropbox.attr
+.dropbox.cache
+icloud
+*.icloud

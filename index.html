@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Vault</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <!-- ============== LOCK SCREEN ============== -->
+  <div id="lock-screen" class="lock-screen">
+    <div class="lock-bg"></div>
+    <div class="lock-card">
+      <div class="lock-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h1>Encrypted Vault</h1>
+      <p class="lock-sub">Enter the key to decrypt this archive.</p>
+      <form id="unlock-form" autocomplete="off">
+        <input type="password" id="password" placeholder="Vault key" autocomplete="off" autofocus />
+        <button type="submit" id="unlock-btn">
+          <span class="btn-label">Decrypt</span>
+          <span class="btn-spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+      <p id="lock-error" class="lock-error" role="alert"></p>
+      <div class="lock-meta">
+        <span>AES-256-GCM</span>
+        <span>PBKDF2 · SHA-512</span>
+        <span id="file-count">&hellip;</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== APP ============== -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+            <path d="M12 2L2 7v10l10 5 10-5V7l-10-5zm0 2.2l7.5 3.75L12 11.7 4.5 7.95 12 4.2zM4 9.45l7 3.5v7.55l-7-3.5V9.45zm9 11.05V12.95l7-3.5v7.55l-7 3.5z"/>
+          </svg>
+          <span>Vault</span>
+        </div>
+        <div class="sidebar-tools">
+          <button id="search-btn" title="Search (Ctrl+K)" aria-label="Search">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </button>
+          <button id="collapse-btn" title="Collapse all" aria-label="Collapse all">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 14 10 14 10 20"></polyline>
+              <polyline points="20 10 14 10 14 4"></polyline>
+              <line x1="14" y1="10" x2="21" y2="3"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-search hidden" id="sidebar-search">
+        <input type="text" id="search-input" placeholder="Filter notes…" />
+      </div>
+      <nav id="tree" class="tree" aria-label="File tree"></nav>
+      <div class="sidebar-footer">
+        <span class="sidebar-stats" id="sidebar-stats"></span>
+        <button id="lock-btn" title="Lock vault">Lock</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div id="breadcrumb" class="breadcrumb"></div>
+      <article id="article" class="article">
+        <div class="welcome">
+          <div class="welcome-icon">
+            <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <line x1="10" y1="9" x2="8" y2="9"/>
+            </svg>
+          </div>
+          <h2>Welcome back</h2>
+          <p>Pick a note from the sidebar — or hit <kbd>Ctrl</kbd>+<kbd>K</kbd> to search.</p>
+        </div>
+      </article>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
