@@ -120,6 +120,20 @@ kbd {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.lock-remember {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 2px;
+  user-select: none;
+}
+.lock-remember input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px; height: 14px;
+  cursor: pointer;
+}
+.lock-remember:hover { color: var(--text); }
 #unlock-btn {
   position: relative;
   background: linear-gradient(180deg, var(--accent), var(--accent-2));

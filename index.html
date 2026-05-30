@@ -23,6 +23,10 @@
       <p class="lock-sub">Enter the key to decrypt this archive.</p>
       <form id="unlock-form" autocomplete="off">
         <input type="password" id="password" placeholder="Vault key" autocomplete="off" autofocus />
+        <label class="lock-remember">
+          <input type="checkbox" id="remember" checked />
+          <span>Stay unlocked on this device</span>
+        </label>
         <button type="submit" id="unlock-btn">
           <span class="btn-label">Decrypt</span>
           <span class="btn-spinner" aria-hidden="true"></span>

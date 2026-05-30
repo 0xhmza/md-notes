@@ -12,6 +12,35 @@ const state = {
   paths: [],        // sorted list of all paths
 };
 
+/* ---------- IndexedDB (persistent key storage) ----------
+   We store the AES-GCM CryptoKey as a non-extractable object.
+   IndexedDB supports structured clone of CryptoKey objects, so the raw key
+   bytes never need to leave the SubtleCrypto sandbox. Even malicious script
+   in the same origin cannot exfiltrate the raw key — only USE it on this site. */
+const IDB_NAME = "vault-store";
+const IDB_STORE = "keys";
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbDo(mode, fn) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, mode);
+    const store = tx.objectStore(IDB_STORE);
+    const req = fn(store);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }));
+}
+const idbGet = (k)    => idbDo("readonly",  s => s.get(k));
+const idbSet = (k, v) => idbDo("readwrite", s => s.put(v, k));
+const idbDel = (k)    => idbDo("readwrite", s => s.delete(k));
+
 /* ---------- helpers ---------- */
 const b64dec = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
@@ -239,7 +268,7 @@ async function openFile(path) {
   if (ext === "md" || file.mime === "text/markdown") {
     const raw = new TextDecoder().decode(file.bytes);
     const processed = await preprocessMarkdown(raw);
-    const html = marked.parse(processed, { gfm: true, breaks: false });
+    const html = marked.parse(processed, { gfm: true, breaks: true });
     article.innerHTML = `<div class="markdown-body">${html}</div>`;
 
     article.querySelectorAll("pre code").forEach((b) => {
@@ -308,12 +337,67 @@ function applySearch(q) {
   });
 }
 
+/* ---------- session persistence ---------- */
+const SESSION_KEY = "current";
+
+async function trySavedUnlock() {
+  let saved;
+  try { saved = await idbGet(SESSION_KEY); } catch { return false; }
+  if (!saved || !saved.key || saved.salt !== state.manifest.salt) {
+    if (saved && saved.salt !== state.manifest.salt) {
+      // bundle was rebuilt with a new salt — the stored key is dead. clear it.
+      try { await idbDel(SESSION_KEY); } catch {}
+    }
+    return false;
+  }
+  // verify with check token
+  try {
+    const pt = await decryptBlob(state.manifest.check, saved.key);
+    if (new TextDecoder().decode(pt) !== "OBSIDIAN_VAULT_v1") throw new Error("bad");
+    state.key = saved.key;
+    return true;
+  } catch {
+    try { await idbDel(SESSION_KEY); } catch {}
+    return false;
+  }
+}
+
+async function saveSession() {
+  try {
+    await idbSet(SESSION_KEY, { key: state.key, salt: state.manifest.salt });
+  } catch (e) {
+    console.warn("Could not persist session key:", e);
+  }
+}
+async function clearSession() {
+  try { await idbDel(SESSION_KEY); } catch {}
+}
+
+function enterApp() {
+  $("lock-screen").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  const root = buildTree();
+  $("tree").innerHTML = "";
+  renderTree(root, $("tree"));
+  $("sidebar-stats").textContent = `${state.paths.length} files · v${state.manifest.v}`;
+  if (location.hash) {
+    const p = decodeURIComponent(location.hash.slice(1));
+    if (state.manifest.files[p]) openFile(p);
+  }
+}
+
 /* ---------- init ---------- */
 async function init() {
   try {
     await loadManifest();
   } catch (e) {
     $("lock-error").textContent = "Failed to load vault: " + e.message;
+    return;
+  }
+
+  // try silent unlock from persistent storage
+  if (await trySavedUnlock()) {
+    enterApp();
     return;
   }
 
@@ -335,17 +419,9 @@ async function init() {
       $("password").select();
       return;
     }
-    // unlocked
-    $("lock-screen").classList.add("hidden");
-    $("app").classList.remove("hidden");
-    const root = buildTree();
-    renderTree(root, $("tree"));
-    $("sidebar-stats").textContent = `${state.paths.length} files · v${state.manifest.v}`;
-    // deep-link
-    if (location.hash) {
-      const p = decodeURIComponent(location.hash.slice(1));
-      if (state.manifest.files[p]) openFile(p);
-    }
+    if ($("remember").checked) await saveSession();
+    else await clearSession();
+    enterApp();
   });
 
   $("search-btn").addEventListener("click", () => {
@@ -359,10 +435,11 @@ async function init() {
 
   $("search-input").addEventListener("input", (e) => applySearch(e.target.value));
 
-  $("lock-btn").addEventListener("click", () => {
+  $("lock-btn").addEventListener("click", async () => {
     state.key = null;
     state.cache.forEach((v) => v.url && URL.revokeObjectURL(v.url));
     state.cache.clear();
+    await clearSession();
     location.reload();
   });
 
