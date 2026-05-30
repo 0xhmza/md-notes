@@ -250,9 +250,18 @@ function renderBreadcrumb(path) {
     .join('<span class="bc-sep">/</span>');
 }
 
+const isMobile = () => window.matchMedia("(max-width: 820px)").matches;
+function closeMobileSidebar() {
+  $("app").classList.remove("menu-open");
+}
+function toggleMobileSidebar() {
+  $("app").classList.toggle("menu-open");
+}
+
 async function openFile(path) {
   setActive(path);
   renderBreadcrumb(path);
+  if (isMobile()) closeMobileSidebar();
 
   const file = await decryptFile(path);
   if (!file) return;
@@ -389,12 +398,16 @@ async function init() {
     return;
   }
 
+  wireListeners();
+
   // try silent unlock from persistent storage
   if (await trySavedUnlock()) {
     enterApp();
     return;
   }
+}
 
+function wireListeners() {
   $("unlock-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const btn = $("unlock-btn");
@@ -423,6 +436,9 @@ async function init() {
     if (!$("sidebar-search").classList.contains("hidden")) $("search-input").focus();
   });
 
+  $("mobile-toggle").addEventListener("click", toggleMobileSidebar);
+  $("sidebar-backdrop").addEventListener("click", closeMobileSidebar);
+
   $("collapse-btn").addEventListener("click", () => {
     document.querySelectorAll(".tree-dir").forEach((d) => d.classList.add("collapsed"));
   });
@@ -448,6 +464,9 @@ async function init() {
       $("search-input").value = "";
       applySearch("");
       $("sidebar-search").classList.add("hidden");
+    }
+    if (e.key === "Escape" && $("app").classList.contains("menu-open")) {
+      closeMobileSidebar();
     }
   });
 }
