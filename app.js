@@ -1,8 +1,3 @@
-/* ============================================================
-   Vault — client-side AES-256-GCM decryptor + viewer
-   Key derivation: PBKDF2-HMAC-SHA-512(password, salt, iter) -> 32 bytes
-   ============================================================ */
-
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -63,7 +58,7 @@ const iconForFile = (name) => {
 /* ---------- crypto ---------- */
 async function deriveKey(password) {
   const { salt, iter } = state.manifest;
-  if (!salt || !iter) throw new Error("Bundle is missing salt/iterations.");
+  if (!salt || !iter) throw new Error("missing parameters");
   const baseKey = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
@@ -90,10 +85,9 @@ async function decryptBlob(b64, key) {
 /* ---------- bundle ---------- */
 async function loadManifest() {
   const res = await fetch("content.enc.json", { cache: "no-store" });
-  if (!res.ok) throw new Error("Could not fetch encrypted bundle.");
+  if (!res.ok) throw new Error("network error");
   state.manifest = await res.json();
   state.paths = Object.keys(state.manifest.files).sort();
-  $("file-count").textContent = `${state.paths.length} files`;
 }
 
 async function unlock(password) {
@@ -391,7 +385,7 @@ async function init() {
   try {
     await loadManifest();
   } catch (e) {
-    $("lock-error").textContent = "Failed to load vault: " + e.message;
+    $("lock-error").textContent = "Something went wrong.";
     return;
   }
 
@@ -415,7 +409,7 @@ async function init() {
     btn.classList.remove("loading");
     btn.disabled = false;
     if (!ok) {
-      $("lock-error").textContent = "Wrong key — could not decrypt.";
+      $("lock-error").textContent = "Incorrect password.";
       $("password").select();
       return;
     }
