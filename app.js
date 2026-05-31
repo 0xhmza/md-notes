@@ -1,10 +1,12 @@
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  manifest: null,   // raw encrypted bundle
+  manifest: null,   // raw encrypted bundle (decrypted-manifest fields live below)
   key: null,        // imported CryptoKey
-  cache: new Map(), // path -> { bytes: Uint8Array, mime, url? }
+  files: null,      // path -> { id, mime, size }   (decrypted manifest)
   paths: [],        // sorted list of all paths
+  cache: new Map(), // path -> { bytes: Uint8Array, mime, url? }
+  chromeInjected: false,
 };
 
 /* ---------- IndexedDB (persistent key storage) ----------
@@ -38,6 +40,7 @@ const idbDel = (k)    => idbDo("readwrite", s => s.delete(k));
 
 /* ---------- helpers ---------- */
 const b64dec = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const escapeHtml = (s) =>
   s.replace(/[&<>"']/g, (c) =>
@@ -53,6 +56,63 @@ const iconForFile = (name) => {
   if (/\.(mp3|wav|ogg|m4a)$/i.test(name)) return "🎵";
   if (/\.(mp4|webm|mov)$/i.test(name)) return "🎬";
   return "📎";
+};
+
+/* ---------- progress bar ---------- */
+const progress = {
+  current: 0,
+  show() {
+    const el = $("lock-progress");
+    el.classList.add("visible");
+    el.classList.remove("done");
+    this.current = 0;
+    this.set(0, "Preparing…");
+  },
+  hide() {
+    const el = $("lock-progress");
+    el.classList.remove("visible");
+    el.classList.remove("done");
+    $("lock-progress-fill").style.width = "0%";
+    this.current = 0;
+  },
+  /** Snap fill to a pct + update label. Use for milestones. */
+  async set(pct, label) {
+    pct = Math.max(this.current, Math.min(100, pct));
+    this.current = pct;
+    if (label) $("lock-progress-text").textContent = label;
+    $("lock-progress-pct").textContent = Math.round(pct) + "%";
+    $("lock-progress-fill").style.width = pct + "%";
+    $("lock-progress").setAttribute("aria-valuenow", String(Math.round(pct)));
+    // small yield so the browser paints between awaited steps
+    await sleep(20);
+  },
+  /** "Creep" the bar toward `target` over `durationMs`, then resolve.
+   *  Cancellable by calling set() with a higher value, which races ahead. */
+  creepTo(target, durationMs) {
+    const start = performance.now();
+    const from = this.current;
+    return new Promise((resolve) => {
+      const step = (now) => {
+        if (this.current >= target) return resolve();
+        const t = Math.min(1, (now - start) / durationMs);
+        // ease-out
+        const eased = 1 - Math.pow(1 - t, 3);
+        const next = from + (target - from) * eased;
+        if (next > this.current) {
+          this.current = next;
+          $("lock-progress-fill").style.width = next + "%";
+          $("lock-progress-pct").textContent = Math.round(next) + "%";
+          $("lock-progress").setAttribute("aria-valuenow", String(Math.round(next)));
+        }
+        if (t < 1) requestAnimationFrame(step);
+        else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+  },
+  finish() {
+    $("lock-progress").classList.add("done");
+  },
 };
 
 /* ---------- crypto ---------- */
@@ -87,26 +147,46 @@ async function loadManifest() {
   const res = await fetch("content.enc.json", { cache: "no-store" });
   if (!res.ok) throw new Error("network error");
   state.manifest = await res.json();
-  state.paths = Object.keys(state.manifest.files).sort();
+  if (state.manifest.v !== 3 || !state.manifest.blobs || !state.manifest.manifest) {
+    throw new Error("Unsupported bundle version. Rebuild with the current vault.py.");
+  }
 }
 
-async function unlock(password) {
-  const key = await deriveKey(password);
+/** Try to derive a key + verify against the check token. */
+async function verifyKey(key) {
   try {
     const pt = await decryptBlob(state.manifest.check, key);
-    if (new TextDecoder().decode(pt) !== "OBSIDIAN_VAULT_v1") return false;
-    state.key = key;
-    return true;
+    return new TextDecoder().decode(pt) === "OBSIDIAN_VAULT_v1";
   } catch {
     return false;
   }
 }
 
+/** Decrypt the encrypted file manifest and inject the encrypted chrome CSS.
+ *  Idempotent — safe to call from both fresh unlock and session restore. */
+async function loadDecryptedChromeAndManifest() {
+  const manifestPt = await decryptBlob(state.manifest.manifest, state.key);
+  state.files = JSON.parse(new TextDecoder().decode(manifestPt));
+  state.paths = Object.keys(state.files).sort();
+
+  if (!state.chromeInjected) {
+    const chromePt = await decryptBlob(state.manifest.chrome, state.key);
+    const css = new TextDecoder().decode(chromePt);
+    const style = document.createElement("style");
+    style.id = "chrome-style";
+    style.textContent = css;
+    document.head.appendChild(style);
+    state.chromeInjected = true;
+  }
+}
+
 async function decryptFile(path) {
   if (state.cache.has(path)) return state.cache.get(path);
-  const meta = state.manifest.files[path];
+  const meta = state.files[path];
   if (!meta) return null;
-  const bytes = await decryptBlob(meta.ct, state.key);
+  const ct = state.manifest.blobs[meta.id];
+  if (!ct) return null;
+  const bytes = await decryptBlob(ct, state.key);
   const obj = { bytes, mime: meta.mime };
   state.cache.set(path, obj);
   return obj;
@@ -172,9 +252,9 @@ function renderTree(node, container, depth = 0) {
 
 /* ---------- wikilinks ---------- */
 function resolveWikiPath(target) {
-  if (state.manifest.files[target]) return target;
+  if (state.files[target]) return target;
   const exts = [".md", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf"];
-  for (const ext of exts) if (state.manifest.files[target + ext]) return target + ext;
+  for (const ext of exts) if (state.files[target + ext]) return target + ext;
   // basename match
   for (const p of state.paths) {
     const base = p.split("/").pop();
@@ -203,7 +283,7 @@ async function preprocessMarkdown(text) {
       );
       continue;
     }
-    const meta = state.manifest.files[resolved];
+    const meta = state.files[resolved];
     if (meta.mime.startsWith("image/")) {
       const url = await getBlobUrl(resolved);
       text = text.replace(m[0], `![${escapeHtml(target)}](${url})`);
@@ -353,16 +433,12 @@ async function trySavedUnlock() {
     }
     return false;
   }
-  // verify with check token
-  try {
-    const pt = await decryptBlob(state.manifest.check, saved.key);
-    if (new TextDecoder().decode(pt) !== "OBSIDIAN_VAULT_v1") throw new Error("bad");
-    state.key = saved.key;
-    return true;
-  } catch {
+  if (!(await verifyKey(saved.key))) {
     try { await idbDel(SESSION_KEY); } catch {}
     return false;
   }
+  state.key = saved.key;
+  return true;
 }
 
 async function saveSession() {
@@ -385,8 +461,61 @@ function enterApp() {
   $("sidebar-stats").textContent = `${state.paths.length} files · v${state.manifest.v}`;
   if (location.hash) {
     const p = decodeURIComponent(location.hash.slice(1));
-    if (state.manifest.files[p]) openFile(p);
+    if (state.files[p]) openFile(p);
   }
+}
+
+/* ---------- unlock orchestration ---------- */
+/** Drive the progress bar from "key ready" through manifest + chrome + handoff. */
+async function finalizeUnlock() {
+  await progress.set(55, "Decrypting manifest…");
+  await loadDecryptedChromeAndManifest();
+  await progress.set(85, "Loading interface…");
+  // tiny pause lets the gradient finish its glide before we hand off
+  await sleep(120);
+  await progress.set(100, "Ready");
+  progress.finish();
+  await sleep(220);
+  enterApp();
+}
+
+async function unlockWithPassword(password) {
+  $("lock-error").textContent = "";
+  progress.show();
+
+  // Stage 1 — derive the key. PBKDF2 inside SubtleCrypto is opaque, so we
+  // creep the bar toward 45% over ~1.6s; if derivation finishes earlier we
+  // snap forward, if it takes longer the bar simply pauses there.
+  await progress.set(5, "Deriving key…");
+  progress.creepTo(45, 1600);
+
+  let key;
+  try {
+    key = await deriveKey(password);
+  } catch (e) {
+    console.warn("deriveKey failed", e);
+    progress.hide();
+    return false;
+  }
+
+  // Stage 2 — verify against the check token.
+  await progress.set(50, "Verifying…");
+  if (!(await verifyKey(key))) {
+    progress.hide();
+    return false;
+  }
+
+  state.key = key;
+  await finalizeUnlock();
+  return true;
+}
+
+async function unlockFromSavedKey() {
+  progress.show();
+  await progress.set(35, "Restoring session…");
+  // creep gives the silent path a little breathing room visually
+  await progress.creepTo(50, 350);
+  await finalizeUnlock();
 }
 
 /* ---------- init ---------- */
@@ -394,7 +523,8 @@ async function init() {
   try {
     await loadManifest();
   } catch (e) {
-    $("lock-error").textContent = "Something went wrong.";
+    console.error(e);
+    $("lock-error").textContent = "Something went wrong loading the bundle.";
     return;
   }
 
@@ -402,7 +532,7 @@ async function init() {
 
   // try silent unlock from persistent storage
   if (await trySavedUnlock()) {
-    enterApp();
+    await unlockFromSavedKey();
     return;
   }
 }
@@ -415,10 +545,9 @@ function wireListeners() {
     if (!pw) return;
     btn.disabled = true;
     btn.classList.add("loading");
-    $("lock-error").textContent = "";
     // small yield so the spinner can paint
-    await new Promise((r) => setTimeout(r, 30));
-    const ok = await unlock(pw);
+    await sleep(20);
+    const ok = await unlockWithPassword(pw);
     btn.classList.remove("loading");
     btn.disabled = false;
     if (!ok) {
@@ -428,7 +557,6 @@ function wireListeners() {
     }
     if ($("remember").checked) await saveSession();
     else await clearSession();
-    enterApp();
   });
 
   $("search-btn").addEventListener("click", () => {

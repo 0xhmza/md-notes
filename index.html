@@ -31,6 +31,15 @@
         </button>
       </form>
       <p id="lock-error" class="lock-error" role="alert"></p>
+      <div id="lock-progress" class="lock-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="lock-progress-label">
+          <span id="lock-progress-text">Preparing…</span>
+          <span class="lock-progress-pct" id="lock-progress-pct">0%</span>
+        </div>
+        <div class="lock-progress-track">
+          <div class="lock-progress-fill" id="lock-progress-fill"></div>
+        </div>
+      </div>
     </div>
   </div>
 
